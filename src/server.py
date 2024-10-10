@@ -4,6 +4,7 @@ import multiprocessing
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+from pathlib import Path
 from pprint import pprint
 
 import chromadb
@@ -11,11 +12,17 @@ import trafilatura
 import uvicorn
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from chromadb.api.models.Collection import Collection
+from docx import Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from duckduckgo_search import AsyncDDGS
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from html2text import HTML2Text
 from llama_cpp import Llama, ChatCompletionRequestMessage, CreateChatCompletionResponse
+from pypdf import PdfReader
 from semantic_text_splitter import TextSplitter
 
 app = FastAPI()
@@ -24,8 +31,8 @@ app = FastAPI()
 local_model = "model/meta-llama/Llama-3.2-3B-Instruct-Q6_K.gguf"
 llm = Llama(
 	model_path=local_model,
-	n_ctx=100000,
-	n_gpu_layers=8,
+	n_ctx=8192,
+	n_gpu_layers=-1,
 	n_batch=300,
 	n_threads=multiprocessing.cpu_count() - 1,
 )
@@ -104,6 +111,73 @@ async def load_urls(urls: list[str]) -> list[str]:
 		loop = asyncio.get_event_loop()
 		tasks = [loop.run_in_executor(executor, fetch_url, url) for url in urls]
 		return await asyncio.gather(*tasks)
+
+def convert_docx_to_text(file_path: Path):
+	doc = Document(file_path)
+	md = []
+
+	def parse_paragraph(paragraph: Paragraph):
+		text = paragraph.text.strip()
+		if not text:
+			return ""
+
+		style = paragraph.style.name
+		if style.startswith('Heading'):
+			level = style[-1]
+			return f"{'#' * int(level)} {text}\n\n"
+		else:
+			return f"{text}\n\n"
+
+	def parse_table(table: Table):
+		md_table = "| " + " | ".join(cell.text for cell in table.rows[0].cells) + " |\n"
+		md_table += "|" + "|".join(["---"] * len(table.columns)) + "|\n"
+		for row in table.rows[1:]:
+			md_table += "| " + " | ".join(cell.text for cell in row.cells) + " |\n"
+		return md_table + "\n"
+
+	for element in doc.element.body:
+		if isinstance(element, CT_P):
+			md.append(parse_paragraph(Paragraph(element, doc)))
+		elif isinstance(element, CT_Tbl):
+			md.append(parse_table(Table(element, doc)))
+
+	return "".join(md)
+
+def convert_pdf_to_text(file_path: Path):
+	reader = PdfReader(file_path)
+	return '\n'.join([page.extract_text() for page in reader.pages])
+
+def get_file_content(file_path: Path):
+	file_extension = file_path.suffix.lower()
+	if file_extension == '.docx':
+		return convert_docx_to_text(file_path)
+	elif file_extension == '.pdf':
+		return convert_pdf_to_text(file_path)
+	else:
+		with open(file_path, 'r', encoding='utf-8') as file:
+			return file.read()
+
+def index_directory(directory_path: str, recursive: bool = False):
+	files_collection = chroma_client.get_or_create_collection("files", embedding_function=SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2", device="cuda"))
+	
+	path = Path(directory_path)
+	if not path.is_dir():
+		raise ValueError(f"{directory_path} is not a valid directory")
+
+	pattern = '**/*' if recursive else '*'
+	for file_path in path.glob(pattern):
+		if file_path.is_file():
+			try:
+				content = get_file_content(file_path)
+				add_to_chroma(files_collection, content, {
+					"file_path": str(file_path),
+					"file_name": file_path.name,
+					"file_type": file_path.suffix,
+					"timestamp": time.time()
+				})
+				print(f"Indexed: {file_path}")
+			except Exception as e:
+					print(f"Error indexing {file_path}: {str(e)}")
 
 async def perform_web_search(query: str, n_results: int = 3) -> list[dict]:
 	"""
@@ -203,7 +277,7 @@ async def query_web(user_input: str):
 			tool_call_params = tool_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
 			query = json.loads(tool_call_params)["query"]
 
-			yield query
+			yield f"Searching for '{query}'...\n\n"
 
 			search_results = await perform_web_search(query)
 			formatted_results = format_search_results(search_results)
@@ -235,6 +309,14 @@ async def query_web(user_input: str):
 			raise e
 
 	return StreamingResponse(generate(), media_type="text/event-stream")
+
+@app.post("/index_directory")
+async def index_directory_endpoint(directory_path: str, recursive: bool = False):
+    try:
+        index_directory(directory_path, recursive)
+        return {"message": f"Successfully indexed directory: {directory_path}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
 	uvicorn.run(app, host="0.0.0.0", port=8000)
