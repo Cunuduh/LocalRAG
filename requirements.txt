@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+chromadb
+llama-cpp-python
+duckduckgo-search
+trafilatura
+html2text
+semantic-text-splitter
+numpy
+requests
