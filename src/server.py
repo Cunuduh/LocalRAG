@@ -62,6 +62,12 @@ file_collection = chroma_client.get_or_create_collection("file", embedding_funct
 
 splitter = TextSplitter(1024, 128)
 
+WEB_CACHE_FILE = Path("cache/web_cache.json")
+web_cache = {}
+if WEB_CACHE_FILE.exists():
+	with open(WEB_CACHE_FILE, "r") as f:
+		web_cache = json.load(f)
+
 def rerank(query: str, docs: list[dict], top_k: int = 3) -> list[dict]:
 	scores = reranker.predict([(query, doc['content']) for doc in docs])
 	sorted_docs = sorted(docs, key=lambda x: scores[docs.index(x)], reverse=True)[:top_k]
@@ -186,6 +192,17 @@ def index_directory(directory_path: str, recursive: bool = False):
 			except Exception as e:
 					print(f"Error indexing {file_path}: {str(e)}")
 
+def add_to_web_cache(url: str, content: str):
+	web_cache[url] = {
+		"content": content,
+		"timestamp": time.time()
+	}
+	with open(WEB_CACHE_FILE, "w") as f:
+		json.dump(web_cache, f)
+
+def get_from_web_cache(urls: list[str]) -> dict[str, str | None]:
+	return {url: web_cache[url]["content"] if url in web_cache else None for url in urls}
+
 async def perform_web_search(query: str, n_results: int = 10) -> list[dict]:
 	print(f"Performing search for '{query}'")
 	
@@ -244,10 +261,14 @@ async def perform_web_search(query: str, n_results: int = 10) -> list[dict]:
 	finally:
 		driver.quit()
 
-	# Fetch content for each result
-	contents = await load_urls([result['url'] for result in search_results])
-	for result, content in zip(search_results, contents):
-		result['content'] = content
+	urls = {result['url'] for result in search_results}
+	cached_contents = get_from_web_cache(urls)
+	cached_urls = {url for url, content in cached_contents.items() if content is not None}
+	urls_to_fetch = cached_urls.symmetric_difference(urls)
+	fetched_contents = await load_urls(urls_to_fetch)
+	for result in search_results:
+		result['content'] = cached_contents.get(result['url'], '') or fetched_contents.get(result['url'], '')
+		add_to_web_cache(result['url'], result['content'])
 
 	return search_results
 
@@ -261,20 +282,18 @@ async def query_rag(user_input: str):
 			tool_call: CreateChatCompletionResponse = llm.create_chat_completion(
 				messages=messages,
 				temperature=0.25,
-				mirostat_mode=2,
-				mirostat_tau=2.0,
-				tool_choice={ "type": "function", "function": { "name": "search_chroma" } },
+				tool_choice={ "type": "function", "function": { "name": "search" } },
 				tools=[{
 					"type": "function",
 					"function": {
-						"name": "search_chroma",
-						"description": "Search the local ChromaDB vector store for relevant documents, modifying the user's query to be less vague, which is interpreted easier by the retriever.",
+						"name": "search",
+						"description": "Search the local vector store for relevant documents or search the web using Google for relevant results.",
 						"parameters": {
 							"type": "object",
 							"properties": {
 								"query": {
 									"type": "string",
-									"description": "The search query. Make sure to include the specific topic of the conversation (e.g. names, events, etc.)."
+									"description": "The search query. Make sure to include the specific topic of the conversation (e.g. names, events, etc.), and make sure to be concise, specific and direct."
 								},
 								"collections": {
 									"type": "array",
@@ -292,10 +311,18 @@ async def query_rag(user_input: str):
 			)
 			tool_call_params = tool_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
 			tool_call_args = json.loads(tool_call_params)
+
 			pprint(tool_call_args)
+
+			web_search_context, file_context, memory_context = "", "", ""
+
 			for collection in tool_call_args["collections"]:
 				match collection:
 					case "web":
+						yield f"Searching for {tool_call_args['query']} on the web...\n\n"
+						web_search_results = await perform_web_search(tool_call_args["query"], tool_call_args.get("n_results", 10))
+						formatted_results = "\n\n".join([f"Title: {result['title']}\nURL: {result['url']}\nContent: {result['content']}" for result in web_search_results])
+						add_to_chroma(web_collection, formatted_results, {"type": "search", "timestamp": time.time()})
 						web_search_docs = search_chroma(web_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
 						web_search_context = format_context(web_search_docs)
 					case "file":
@@ -316,79 +343,8 @@ async def query_rag(user_input: str):
 			for chunk in result:
 				yield chunk['choices'][0]['delta'].get('content', '')
 				response += chunk['choices'][0]['delta'].get('content', '')
-
-			add_to_chroma(memory_collection, f"Human: {user_input}\n\nAI: {response}", {"type": "qa", "timestamp": time.time()})
-		except Exception as e:
-			yield f"An error occurred: {str(e)}"
-			raise e
-
-	return StreamingResponse(generate(), media_type="text/event-stream")
-
-@app.get("/query/web")
-async def query_web(user_input: str):
-	async def generate():
-		try:
-			memory_context_docs = search_chroma(memory_collection, user_input)
-			web_context_docs = search_chroma(web_collection, user_input)
-			memory_context = format_context(memory_context_docs)
-			web_context = format_context(web_context_docs)
-			messages = generate_prompt(PROMPT_TEMPLATE, memory=memory_context, web_search=web_context, question=user_input)
-			tool_call: CreateChatCompletionResponse = llm.create_chat_completion(
-				messages=messages,
-				temperature=0.25,
-				mirostat_mode=2,
-				mirostat_tau=2.0,
-				tool_choice={ "type": "function", "function": { "name": "search" } },
-				tools=[{
-					"type": "function",
-					"function": {
-						"name": "search",
-						"description": "Search the web using Google for more information on a topic.",
-						"parameters": {
-							"type": "object",
-							"properties": {
-								"query": {
-									"type": "string",
-									"description": "The search query. Make sure to include the specific topic of the conversation (e.g. names, events, etc.)."
-								},
-								"n_results": {
-									"type": "number",
-									"description": "The number of search results to return. Default value is 5. Adjust value depending on the scope of the search."
-								},
-							},
-							"required": ["query"]
-						}
-					}
-				}]
-			)
-			tool_call_params = tool_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
-			query = json.loads(tool_call_params)["query"]
-
-			yield f"Searching for '{query}'...\n\n"
-
-			search_results = await perform_web_search(query)
-			formatted_results = [result["content"] for result in search_results]
-
-			add_to_chroma(web_collection, "\n\n".join(formatted_results), {"type": "search", "timestamp": time.time()})
-
-			web_context_docs = search_chroma(web_collection, query)
-			web_context = format_context(web_context_docs)
-			messages = generate_prompt(PROMPT_TEMPLATE, memory=memory_context, web_search=web_context, question=user_input)
-			pprint(messages, indent=1)
-			result = llm.create_chat_completion(
-				messages=messages,
-				stream=True,
-				temperature=0.25,
-				mirostat_mode=2,
-				mirostat_tau=2.0
-			)
-
-			response = ""
-			for chunk in result:
-				yield chunk['choices'][0]['delta'].get('content', '')
-				response += chunk['choices'][0]['delta'].get('content', '')
-			sources = "\n\nSources:\n" + "\n".join([f"- {result['url']}" for result in search_results])
-			yield sources
+			if web_search_context:
+				yield "\n\nSources:\n" + "\n".join([f"- {web_search_result['url']}" for web_search_result in web_search_results])
 			add_to_chroma(memory_collection, f"Human: {user_input}\n\nAI: {response}", {"type": "qa", "timestamp": time.time()})
 		except Exception as e:
 			yield f"An error occurred: {str(e)}"
