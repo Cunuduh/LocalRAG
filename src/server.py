@@ -35,7 +35,7 @@ app = FastAPI()
 local_model = "model/meta-llama/Llama-3.2-3B-Instruct-Q6_K.gguf"
 llm = Llama(
 	model_path=local_model,
-	n_ctx=8192,
+	n_ctx=4096,
 	n_gpu_layers=-1,
 	n_batch=300,
 	n_threads=multiprocessing.cpu_count() - 1,
@@ -68,7 +68,7 @@ if WEB_CACHE_FILE.exists():
 	with open(WEB_CACHE_FILE, "r") as f:
 		web_cache = json.load(f)
 
-def rerank(query: str, docs: list[dict], top_k: int = 3) -> list[dict]:
+def rerank(query: str, docs: list[dict], top_k: int = 5) -> list[dict]:
 	scores = reranker.predict([(query, doc['content']) for doc in docs])
 	sorted_docs = sorted(docs, key=lambda x: scores[docs.index(x)], reverse=True)[:top_k]
 	return sorted_docs
@@ -116,12 +116,12 @@ def generate_prompt(template: list[ChatCompletionRequestMessage], **kwargs) -> l
 
 	return prompt
 
-def fetch_url(url: str) -> str:
+def fetch_url(url: str) -> dict[str, str]:
 	downloaded = trafilatura.fetch_url(url)
 	text = trafilatura.extract(downloaded, include_links=False, include_images=False, favor_precision=True, output_format="markdown")
-	return text if text else ""
+	return { "url": url, "content": text }
 
-async def load_urls(urls: list[str]) -> list[str]:
+async def load_urls(urls: list[str]) -> list[dict[str, str]]:
 	with ThreadPoolExecutor(max_workers=10) as executor:
 		loop = asyncio.get_event_loop()
 		tasks = [loop.run_in_executor(executor, fetch_url, url) for url in urls]
@@ -197,80 +197,89 @@ def add_to_web_cache(url: str, content: str):
 		"content": content,
 		"timestamp": time.time()
 	}
-	with open(WEB_CACHE_FILE, "w") as f:
-		json.dump(web_cache, f)
+	if WEB_CACHE_FILE.exists():
+		with open(WEB_CACHE_FILE, "w") as f:
+			json.dump(web_cache, f)
 
 def get_from_web_cache(urls: list[str]) -> dict[str, str | None]:
 	return {url: web_cache[url]["content"] if url in web_cache else None for url in urls}
 
 async def perform_web_search(query: str, n_results: int = 10) -> list[dict]:
-	print(f"Performing search for '{query}'")
-	
-	options = webdriver.ChromeOptions()
-	options.add_argument('--headless=new')
-	options.add_argument("--window-position=-2400,-2400")
-	options.add_argument('--no-sandbox')
-	options.add_argument('--disable-dev-shm-usage')
-	driver = webdriver.Chrome(options=options)
+  print(f"Performing search for '{query}'")
+  
+  options = webdriver.ChromeOptions()
+  options.add_argument('--headless=new')
+  options.add_argument("--window-position=-2400,-2400")
+  options.add_argument('--no-sandbox')
+  options.add_argument('--disable-dev-shm-usage')
+  driver = webdriver.Chrome(options=options)
 
-	try:
-		driver.get("https://www.google.com")
-		
-		# Accept cookies if the dialog appears
-		try:
-			accept_button = WebDriverWait(driver, 5).until(
-				EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Accept all')]"))
-			)
-			accept_button.click()
-		except:
-			pass
+  try:
+    driver.get("https://www.google.com")
+    
+    try:
+      accept_button = WebDriverWait(driver, 5).until(
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Accept all')]"))
+      )
+      accept_button.click()
+    except:
+      pass
 
-		search_box = WebDriverWait(driver, 10).until(
-			EC.presence_of_element_located((By.NAME, "q"))
-		)
-		search_box.send_keys(query)
-		search_box.send_keys(Keys.RETURN)
+    search_box = WebDriverWait(driver, 10).until(
+      EC.presence_of_element_located((By.NAME, "q"))
+    )
+    search_box.send_keys(query)
+    search_box.send_keys(Keys.RETURN)
 
-		WebDriverWait(driver, 10).until(
-			EC.presence_of_element_located((By.CSS_SELECTOR, "div.g"))
-		)
+    WebDriverWait(driver, 10).until(
+      EC.presence_of_element_located((By.CSS_SELECTOR, "div.g"))
+    )
 
-		results = driver.find_elements(By.CSS_SELECTOR, "div.g")
-		search_results = []
+    results = driver.find_elements(By.CSS_SELECTOR, "div.g")
+    search_results = []
 
-		for result in results[:n_results]:
-			try:
-				title_element = result.find_element(By.CSS_SELECTOR, "h3")
-				url_element = result.find_element(By.CSS_SELECTOR, "a")
-				
-				title = title_element.text
-				url = url_element.get_attribute("href")
-				
-				if title and url:
-					search_results.append({
-						'title': title,
-						'url': url,
-						'content': ''  # We'll fetch content separately
-					})
-			except:
-				continue  # Skip this result if we can't extract title or URL
+    for result in results[:n_results]:
+      try:
+        title_element = result.find_element(By.CSS_SELECTOR, "h3")
+        url_element = result.find_element(By.CSS_SELECTOR, "a")
+        
+        title = title_element.text
+        url = url_element.get_attribute("href")
+        
+        if title and url:
+          search_results.append({
+            'title': title,
+            'url': url,
+            'content': ''
+          })
+      except:
+        continue
 
-			if len(search_results) >= n_results:
-				break
+      if len(search_results) >= n_results:
+        break
 
-	finally:
-		driver.quit()
+  finally:
+    driver.quit()
 
-	urls = {result['url'] for result in search_results}
-	cached_contents = get_from_web_cache(urls)
-	cached_urls = {url for url, content in cached_contents.items() if content is not None}
-	urls_to_fetch = cached_urls.symmetric_difference(urls)
-	fetched_contents = await load_urls(urls_to_fetch)
-	for result in search_results:
-		result['content'] = cached_contents.get(result['url'], '') or fetched_contents.get(result['url'], '')
-		add_to_web_cache(result['url'], result['content'])
+  urls = [result['url'] for result in search_results]
+  cached_contents = get_from_web_cache(urls)
+  urls_to_fetch = [url for url, content in cached_contents.items() if content is None]
 
-	return search_results
+  if urls_to_fetch:
+    fetched_contents = await load_urls(urls_to_fetch)
+    
+    for fetched in fetched_contents:
+      for result in search_results:
+        if result['url'] == fetched['url']:
+          result['content'] = fetched['content']
+          add_to_web_cache(fetched['url'], fetched['content'])
+          break
+
+  for result in search_results:
+    if result['content'] == '' and cached_contents[result['url']]:
+      result['content'] = cached_contents[result['url']]
+
+  return search_results
 
 @app.get("/query/rag")
 async def query_rag(user_input: str):
@@ -321,8 +330,8 @@ async def query_rag(user_input: str):
 					case "web":
 						yield f"Searching for {tool_call_args['query']} on the web...\n\n"
 						web_search_results = await perform_web_search(tool_call_args["query"], tool_call_args.get("n_results", 10))
-						formatted_results = "\n\n".join([f"Title: {result['title']}\nURL: {result['url']}\nContent: {result['content']}" for result in web_search_results])
-						add_to_chroma(web_collection, formatted_results, {"type": "search", "timestamp": time.time()})
+						for result in web_search_results:
+							add_to_chroma(web_collection, result['content'], {"source": result['url'], "title": result['title']})
 						web_search_docs = search_chroma(web_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
 						web_search_context = format_context(web_search_docs)
 					case "file":
@@ -331,7 +340,9 @@ async def query_rag(user_input: str):
 					case "memory":
 						memory_context_docs = search_chroma(memory_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
 						memory_context = format_context(memory_context_docs)
+
 			messages = generate_prompt(PROMPT_TEMPLATE, memory=memory_context, web_search=web_search_context, question=user_input)
+			pprint(messages)
 			result = llm.create_chat_completion(
 				messages=messages,
 				stream=True,
