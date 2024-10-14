@@ -6,10 +6,10 @@ duckduckgo-search
 trafilatura
 html2text
 semantic-text-splitter
+einops
 sentence-transformers
+selenium
 numpy==1.26.4
-ninja
-flash-attn
 requests
 python-docx
 pypdf

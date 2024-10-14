@@ -31,7 +31,7 @@ def index_dir(directory_path: str, recursive: bool = True):
 
 if __name__ == "__main__":
 	if len(sys.argv) != 3:
-		print("Usage: python main.py 'tool (raw|web)' 'Your question or prompt here'")
+		print("Usage: python main.py 'tool (rag|web|idx)' 'Your question or prompt here'")
 	else:
 		tool = sys.argv[1]
 		user_input = sys.argv[2]
