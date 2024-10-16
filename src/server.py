@@ -352,16 +352,17 @@ async def query_rag(user_input: str):
 			pprint(messages)
 			result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 				messages=messages,
-				stream=True,
 				logits_processor=logits_processor_list,
 				temperature=0.666,
         top_p=0.9,
         top_k=27,
-        min_p=0.02
+        min_p=0.03,
+				stream=True,
 			)
 			response = ""
 			for chunk in result:
 				yield chunk['choices'][0]['delta'].get('content', '')
+				await asyncio.sleep(0)
 				response += chunk['choices'][0]['delta'].get('content', '')
 			if web_search_context:
 				yield "\n\nSources:\n" + "\n".join([f"- {web_search_result['url']}" for web_search_result in web_search_results])
