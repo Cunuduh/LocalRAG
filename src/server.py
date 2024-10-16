@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from pathlib import Path
 from pprint import pprint
+from typing import Iterator
 
 import chromadb
 import trafilatura
@@ -19,7 +20,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from llama_cpp import Llama, ChatCompletionRequestMessage, CreateChatCompletionResponse
+from llama_cpp import CreateChatCompletionStreamResponse, Llama, ChatCompletionRequestMessage, CreateChatCompletionResponse, LogitsProcessorList
 from pypdf import PdfReader
 from semantic_text_splitter import TextSplitter
 from selenium import webdriver
@@ -29,17 +30,22 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sentence_transformers import CrossEncoder
 
+from entropix_sampler import SamplerConfig, EntropixLogitsProcessor
+
 app = FastAPI()
 
 # LLM setup
-local_model = "model/meta-llama/Llama-3.2-3B-Instruct-Q6_K.gguf"
+local_model = "model/Qwen/Qwen2.5-3B-Instruct.Q6_K.gguf"
 llm = Llama(
 	model_path=local_model,
 	n_ctx=4096,
 	n_gpu_layers=-1,
-	n_batch=300,
+	n_batch=512,
 	n_threads=multiprocessing.cpu_count() - 1,
 )
+entropix_config = SamplerConfig()
+logits_processor = EntropixLogitsProcessor(entropix_config)
+logits_processor_list = LogitsProcessorList([logits_processor])
 
 PROMPT_TEMPLATE = [
 	{"role": "system", "content": """You are a helpful assistant for conversation. Use the following pieces of retrieved context, or your own knowledge to answer the query if retrieved context is incomplete or irrelevant. If you ABSOLUTELY don't know how to respond, just say that you don't know. Keep the answer concise, DO NOT continue the conversation on your own and DO NOT correct yourself or leave "notes". DO NOT mention anything relating to a system message at all in your response.
@@ -52,7 +58,7 @@ CONTEXT (WEB SEARCH) BEGINS
 END OF CONTEXT (WEB SEARCH)"""},
 	{"role": "user", "content": "{question}"},
 ]
-reranker = CrossEncoder("BAAI/bge-reranker-base", device="cuda", trust_remote_code=True, max_length=1024)
+reranker = CrossEncoder("BAAI/bge-reranker-base", device="cuda", trust_remote_code=True, max_length=512)
 embedding_function = SentenceTransformerEmbeddingFunction(model_name="Alibaba-NLP/gte-base-en-v1.5", device="cuda", model_kwargs={ "torch_dtype": "float16" }, trust_remote_code=True)
 
 chroma_client = chromadb.PersistentClient()
@@ -60,7 +66,7 @@ memory_collection = chroma_client.get_or_create_collection("memory", embedding_f
 web_collection = chroma_client.get_or_create_collection("web", embedding_function=embedding_function)
 file_collection = chroma_client.get_or_create_collection("file", embedding_function=embedding_function)
 
-splitter = TextSplitter(1024, 128)
+splitter = TextSplitter(512, 128)
 
 WEB_CACHE_FILE = Path("cache/web_cache.json")
 web_cache = {}
@@ -306,14 +312,14 @@ async def query_rag(user_input: str):
 								},
 								"collections": {
 									"type": "array",
-									"description": "The names of the ChromaDB collections to search in a string array. Available collections are 'memory', 'file', and 'web'.",
+									"description": "The names of the ChromaDB collections to search in a string array. Available collections are 'memory', 'file', and 'web', or none at all (empty array). Please use 'web' for queries that require up-to-date, precise or obscure information.",
 								},
 								"n_results": {
 									"type": "number",
 									"description": "The number of search results to return. Default value is 10. Adjust value depending on the scope of the search."
 								}
 							},
-							"required": ["query", "collections"]
+							"required": ["query", "collections", "n_results"]
 						}
 					}
 				}]
@@ -328,27 +334,30 @@ async def query_rag(user_input: str):
 			for collection in tool_call_args["collections"]:
 				match collection:
 					case "web":
-						yield f"Searching for {tool_call_args['query']} on the web...\n\n"
-						web_search_results = await perform_web_search(tool_call_args["query"], tool_call_args.get("n_results", 10))
-						for result in web_search_results:
-							add_to_chroma(web_collection, result['content'], {"source": result['url'], "title": result['title']})
-						web_search_docs = search_chroma(web_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
+						yield f"Searching for '{tool_call_args['query']}'...\n\n"
+						web_search_results = await perform_web_search(tool_call_args["query"], tool_call_args["n_results"])
+						for web_search_result in web_search_results:
+							if web_search_result["content"]:
+								add_to_chroma(web_collection, web_search_result['content'], {"source": web_search_result['url'], "title": web_search_result['title']})
+						web_search_docs = search_chroma(web_collection, tool_call_args["query"], tool_call_args["n_results"])
 						web_search_context = format_context(web_search_docs)
 					case "file":
-						file_context_docs = search_chroma(file_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
+						file_context_docs = search_chroma(file_collection, tool_call_args["query"], tool_call_args["n_results"])
 						file_context = format_context(file_context_docs)
 					case "memory":
-						memory_context_docs = search_chroma(memory_collection, tool_call_args["query"], tool_call_args.get("n_results", 10))
+						memory_context_docs = search_chroma(memory_collection, tool_call_args["query"], tool_call_args["n_results"])
 						memory_context = format_context(memory_context_docs)
 
 			messages = generate_prompt(PROMPT_TEMPLATE, memory=memory_context, web_search=web_search_context, question=user_input)
 			pprint(messages)
-			result = llm.create_chat_completion(
+			result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 				messages=messages,
 				stream=True,
-				temperature=0.25,
-				mirostat_mode=2,
-				mirostat_tau=2.0
+				logits_processor=logits_processor_list,
+				temperature=0.666,
+        top_p=0.9,
+        top_k=27,
+        min_p=0.02
 			)
 			response = ""
 			for chunk in result:
@@ -365,11 +374,11 @@ async def query_rag(user_input: str):
 
 @app.post("/index_directory")
 async def index_directory_endpoint(directory_path: str, recursive: bool = False):
-    try:
-        index_directory(directory_path, recursive)
-        return {"message": f"Successfully indexed directory: {directory_path}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+	try:
+		index_directory(directory_path, recursive)
+		return {"message": f"Successfully indexed directory: {directory_path}"}
+	except Exception as e:
+		raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
 	uvicorn.run(app, host="0.0.0.0", port=8000)
