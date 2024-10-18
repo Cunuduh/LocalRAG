@@ -30,12 +30,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sentence_transformers import CrossEncoder
 
-from entropix_sampler import SamplerConfig, EntropixLogitsProcessor
-
 app = FastAPI()
 
 # LLM setup
-local_model = "model/Qwen/Qwen2.5-3B-Instruct.Q6_K.gguf"
+local_model = "model/meta-llama/Llama-3.2-3B-Instruct-Q6_K.gguf"
 llm = Llama(
 	model_path=local_model,
 	n_ctx=4096,
@@ -43,9 +41,6 @@ llm = Llama(
 	n_batch=512,
 	n_threads=multiprocessing.cpu_count() - 1,
 )
-entropix_config = SamplerConfig()
-logits_processor = EntropixLogitsProcessor(entropix_config)
-logits_processor_list = LogitsProcessorList([logits_processor])
 
 PROMPT_TEMPLATE = [
 	{"role": "system", "content": """You are a helpful assistant for conversation. Use the following pieces of retrieved context, or your own knowledge to answer the query if retrieved context is incomplete or irrelevant. If you ABSOLUTELY don't know how to respond, just say that you don't know. Keep the answer concise, DO NOT continue the conversation on your own and DO NOT correct yourself or leave "notes". DO NOT mention anything relating to a system message at all in your response.
@@ -352,7 +347,6 @@ async def query_rag(user_input: str):
 			pprint(messages)
 			result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 				messages=messages,
-				logits_processor=logits_processor_list,
 				temperature=0.666,
         top_p=0.9,
         top_k=27,
