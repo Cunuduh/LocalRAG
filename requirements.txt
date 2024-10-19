@@ -11,5 +11,3 @@ sentence-transformers
 selenium
 numpy==1.26.4
 requests
-python-docx
-pypdf

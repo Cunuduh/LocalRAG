@@ -11,13 +11,9 @@ import chromadb
 import trafilatura
 from chromadb.utils.embedding_functions.sentence_transformer_embedding_function import SentenceTransformerEmbeddingFunction
 from chromadb.api.models.Collection import Collection
+from duckduckgo_search import AsyncDDGS
 from llama_cpp import CreateChatCompletionStreamResponse, Llama, ChatCompletionRequestMessage, CreateChatCompletionResponse
 from semantic_text_splitter import TextSplitter
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from sentence_transformers import CrossEncoder
 
 from config import chroma_config, DEVICE, PROMPT_TEMPLATE, RERANKER_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, WEB_CACHE_FILE
@@ -38,7 +34,7 @@ if WEB_CACHE_FILE.exists():
 	with open(WEB_CACHE_FILE, "r") as f:
 		web_cache = json.load(f)
 
-def rerank(query: str, docs: list[dict], top_k: int = 5) -> list[dict]:
+def rerank(query: str, docs: list[dict], top_k: int = 10) -> list[dict]:
 	scores = reranker.predict([(query, doc['content']) for doc in docs])
 	sorted_docs = sorted(docs, key=lambda x: scores[docs.index(x)], reverse=True)[:top_k]
 	return sorted_docs
@@ -63,7 +59,7 @@ def add_to_chroma(collection: Collection, text: str, metadata: dict, max_workers
 def search_chroma(collection: Collection, query: str, n_results: int = 10) -> list[dict]:
 	results = collection.query(
 		query_texts=[query],
-		n_results=n_results
+		n_results=n_results*2
 	)
 	docs = [{"content": doc, "metadata": meta} for doc, meta in zip(results['documents'][0], results['metadatas'][0])]
 	if len(docs) == 0:
@@ -108,81 +104,14 @@ def get_from_web_cache(urls: list[str]) -> dict[str, str | None]:
 	return {url: web_cache[url]["content"] if url in web_cache else None for url in urls}
 
 async def perform_web_search(query: str, n_results: int = 10) -> list[dict]:
-  print(f"Performing search for '{query}'")
-  
-  options = webdriver.ChromeOptions()
-  options.add_argument('--headless=new')
-  options.add_argument("--window-position=-2400,-2400")
-  options.add_argument('--no-sandbox')
-  options.add_argument('--disable-dev-shm-usage')
-  driver = webdriver.Chrome(options=options)
+	print(f"Performing search for '{query}'")
+	results = await AsyncDDGS().atext(query, max_results=n_results)
+	hrefs = [result['href'] for result in results]
 
-  try:
-    driver.get("https://www.google.com")
-    
-    try:
-      accept_button = WebDriverWait(driver, 5).until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Accept all')]"))
-      )
-      accept_button.click()
-    except:
-      pass
+	content = await load_urls(hrefs)
+	return content
 
-    search_box = WebDriverWait(driver, 10).until(
-      EC.presence_of_element_located((By.NAME, "q"))
-    )
-    search_box.send_keys(query)
-    search_box.send_keys(Keys.RETURN)
 
-    WebDriverWait(driver, 10).until(
-      EC.presence_of_element_located((By.CSS_SELECTOR, "div.g"))
-    )
-
-    results = driver.find_elements(By.CSS_SELECTOR, "div.g")
-    search_results = []
-
-    for result in results[:n_results]:
-      try:
-        title_element = result.find_element(By.CSS_SELECTOR, "h3")
-        url_element = result.find_element(By.CSS_SELECTOR, "a")
-        
-        title = title_element.text
-        url = url_element.get_attribute("href")
-        
-        if title and url:
-          search_results.append({
-            'title': title,
-            'url': url,
-            'content': ''
-          })
-      except:
-        continue
-
-      if len(search_results) >= n_results:
-        break
-
-  finally:
-    driver.quit()
-
-  urls = [result['url'] for result in search_results]
-  cached_contents = get_from_web_cache(urls)
-  urls_to_fetch = [url for url, content in cached_contents.items() if content is None]
-
-  if urls_to_fetch:
-    fetched_contents = await load_urls(urls_to_fetch)
-    
-    for fetched in fetched_contents:
-      for result in search_results:
-        if result['url'] == fetched['url']:
-          result['content'] = fetched['content']
-          add_to_web_cache(fetched['url'], fetched['content'])
-          break
-
-  for result in search_results:
-    if result['content'] == '' and cached_contents[result['url']]:
-      result['content'] = cached_contents[result['url']]
-
-  return search_results
 
 async def generate_rag(user_input: str, llm: Llama):
 	try:
@@ -232,12 +161,12 @@ async def generate_rag(user_input: str, llm: Llama):
 					yield f"Searching for '{tool_call_args['query']}'...\n\n"
 					web_search_results = await perform_web_search(tool_call_args["query"], tool_call_args["n_results"])
 					for web_search_result in web_search_results:
-						if web_search_result["content"]:
-							add_to_chroma(web_collection, web_search_result['content'], {"source": web_search_result['url'], "title": web_search_result['title']})
+						if web_search_result['content']:
+							add_to_chroma(web_collection, web_search_result['content'], {"source": web_search_result['url']})
 					web_search_docs = search_chroma(web_collection, tool_call_args["query"], tool_call_args["n_results"])
 					web_search_context = format_context(web_search_docs)
 				case "memory":
-					memory_context_docs = search_chroma(memory_collection, tool_call_args["query"], tool_call_args["n_results"])
+					memory_context_docs = search_chroma(memory_collection, tool_call_args['query'], tool_call_args['n_results'])
 					memory_context = format_context(memory_context_docs)
 
 		messages = generate_prompt(PROMPT_TEMPLATE, memory=memory_context, web_search=web_search_context, question=user_input)
