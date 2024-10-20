@@ -377,7 +377,7 @@ Please note these are only examples to improve the quality of your final decisio
 <query>
 {query}
 </query>"""},
-  {"role": "user", "content": "Based on the query and context, determine if Chain-of-Thought (CoT)reasoning is necessary. Provide an explanation for your decision, then indicate whether to use CoT in your response with the appropriate JSON object."},
+  {"role": "user", "content": "Based on the query and context, determine if Chain-of-Thought (CoT) reasoning is necessary. Provide an explanation for your decision, then indicate whether to use CoT in your response with the appropriate JSON object."},
 ]
 
 turn_index: int = 0
@@ -477,14 +477,12 @@ async def generate_rag(user_input: str, llm: Llama):
 		chosen_template = COT_PROMPT_TEMPLATE if use_cot else PROMPT_TEMPLATE
 
 		messages = generate_prompt(chosen_template, memory=memory_context, web_search=web_search_context, question=user_input)
-		for message in messages:
-			print(message["content"])
 		result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 			messages=messages,
 			temperature=0.666,
 			top_p=0.9,
 			top_k=27,
-			min_p=0.03,
+			min_p=0.025,
 			stream=True,
 		)
 		response = ""
