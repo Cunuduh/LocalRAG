@@ -107,7 +107,7 @@ def get_from_web_cache(urls: list[str]) -> dict[str, str | None]:
 
 async def perform_web_search(query: str, n_results: int = 20) -> list[dict]:
 	print(f"Performing search for '{query}'")
-	results = await AsyncDDGS().atext(query, max_results=n_results)
+	results = await AsyncDDGS().atext(query, max_results=n_results, backend="lite")
 	hrefs = [result['href'] for result in results]
 
 	content = await load_urls(hrefs)
@@ -151,20 +151,23 @@ Make sure to include the specific topic of the conversation (names, events, etc.
 Do not be too vague with the search query, or else the search tool may not return relevant results.
 If the user requests you to recall something from previous messages or memory, include 'memory' in the 'collections' parameter of the search tool. Do not modify the search query to include the mention of memory search.
 If the user specifically requests you to search the web, or the user's query requires you to use the web, include 'web' in the 'collections' parameter of the search tool. Do not modify the search query to include the mention of web search.
-Prefer using 'memory' search over 'web' search unless explicitly instructed otherwise or when dealing with niche (not commonly known), recent or rapidly changing information.
+Prefer using 'memory' search over 'web' search unless explicitly instructed otherwise or when dealing with niche (not commonly known), specific (dates, locations, names), recent or rapidly changing information.
 </instruction>
 <examples>
 <example>
+User: Where was Donald Trump born?
+Search: {{ "query": "Donald Trump birthplace", "collections": ["web"], "n_results": 5 }}
+</example>
+<example>
+User: What major event happened on 7 December 1941?
+Search: {{ "query": "major event on 7 December 1941", "collections": ["web"], "n_results": 10 }}
+<example>
 User: What did we talk about regarding AI safety last time?
-Search: {{ "query": "AI safety discussion", "collections": ["memory"], "n_results": 20 }}
+Search: {{ "query": "AI safety discussion", "collections": ["memory"], "n_results": 10 }}
 </example>
 <example>
 User: Can you remind me of the three laws of robotics we discussed earlier?
-Search: {{ "query": "three laws of robotics", "collections": ["memory"], "n_results": 20 }}
-</example>
-<example>
-User: What was the last topic we covered about machine learning?
-Search: {{ "query": "recent machine learning topic", "collections": ["memory"], "n_results": 20 }}
+Search: {{ "query": "three laws of robotics", "collections": ["memory"], "n_results": 10 }}
 </example>
 <example>
 User: Tell me the latest news about the Mars rover.
@@ -172,7 +175,7 @@ Search: {{ "query": "Mars rover latest news", "collections": ["web"], "n_results
 </example>
 <example>
 User: Do you remember my name?
-Search: {{ "query": "name of user", "collections": ["memory"], "n_results": 10 }}
+Search: {{ "query": "name of user", "collections": ["memory"], "n_results": 5 }}
 </example>
 <example>
 User: Compare the AI ethics principles we discussed before with the latest industry standards.
@@ -409,7 +412,7 @@ async def generate_rag(user_input: str, llm: Llama):
 							},
 							"n_results": {
 								"type": "number",
-								"description": "The number of search results to return. Default value is 20. Minimum value is 10 for better results and larger context."
+								"description": "The number of search results to return. Default value is 10."
 							}
 						},
 						"required": ["query", "collections"]
@@ -419,7 +422,7 @@ async def generate_rag(user_input: str, llm: Llama):
 		)
 		tool_call_params = tool_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
 		tool_call_args: dict = json.loads(tool_call_params)
-		tool_call_args["n_results"] = max(tool_call_args.get("n_results", 20), 10)
+		tool_call_args["n_results"] = tool_call_args.get("n_results", 10)
 		pprint(tool_call_args)
 
 		web_search_context, memory_context = "", ""
