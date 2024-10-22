@@ -2,7 +2,7 @@ import multiprocessing
 
 import torch
 
-local_model = "model/Qwen/Qwen2.5-3B-Instruct.Q6_K.gguf"
+local_model = "model/Qwen/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
 llm_config = {
   "model_path": local_model,
   "n_ctx": 8192,

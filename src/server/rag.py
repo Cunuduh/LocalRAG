@@ -119,10 +119,11 @@ def get_formatted_time() -> str:
 PROMPT_TEMPLATE = [
   {"role": "system", "content":
 """<task>
-Provide concise, informative responses relevant to the conversation you are having with a user, augmenting your knowledge with context from below if necessary.
+Provide clear, informative responses relevant to the conversation you are having with a user, augmenting your knowledge with context from below if necessary.
 </task>
 <instruction>
 You will access information within the <context> tags provided below and your own knowledge base to answer the query.
+Complexity is not the problem, ambiguity is. Simplicity does not solve ambiguity, clarity does. Respond clearly to the user's question and/or request but do not simplify your response or be ambiguous. Embrace complexity when necessary, but always strive for clarity in your explanations.
 </instruction>
 <context type="memory">
 {memory}
@@ -136,12 +137,14 @@ DO NOT continue the conversation on your own and DO NOT correct yourself or leav
 </instruction>"""},
   {"role": "user", "content": "{question}"},
 ]
-SEARCH_PROMPT_TEMPLATE = [{"role": "system", "content":
+SEARCH_PROMPT_TEMPLATE = [
+	{"role": "system", "content":
 """<task>
 Provide extra context to use in your next response using the search tool.
 </task>
 <instruction>
 Given the below context within the <context> tag, craft an effective search query that can be used with the search tool to answer the user query effectively.
+Justify your choices for 'collections', 'n_results' and 'query' parameters of the search tool within the 'explanation' parameter.
 </instruction>
 <context type="memory">
 {memory}
@@ -152,43 +155,39 @@ Do not be too vague with the search query, or else the search tool may not retur
 If the user requests you to recall something from previous messages or memory, include 'memory' in the 'collections' parameter of the search tool. Do not modify the search query to include the mention of memory search.
 If the user specifically requests you to search the web, or the user's query requires you to use the web, include 'web' in the 'collections' parameter of the search tool. Do not modify the search query to include the mention of web search.
 Prefer using 'memory' search over 'web' search unless explicitly instructed otherwise or when dealing with niche (not commonly known), specific (dates, locations, names), recent or rapidly changing information.
-</instruction>
-<examples>
-<example>
-User: Where was Donald Trump born?
-Search: {{ "query": "Donald Trump birthplace", "collections": ["web"], "n_results": 5 }}
-</example>
-<example>
-User: What major event happened on 7 December 1941?
-Search: {{ "query": "major event on 7 December 1941", "collections": ["web"], "n_results": 10 }}
-<example>
-User: What did we talk about regarding AI safety last time?
-Search: {{ "query": "AI safety discussion", "collections": ["memory"], "n_results": 10 }}
-</example>
-<example>
-User: Can you remind me of the three laws of robotics we discussed earlier?
-Search: {{ "query": "three laws of robotics", "collections": ["memory"], "n_results": 10 }}
-</example>
-<example>
-User: Tell me the latest news about the Mars rover.
-Search: {{ "query": "Mars rover latest news", "collections": ["web"], "n_results": 20 }}
-</example>
-<example>
-User: Do you remember my name?
-Search: {{ "query": "name of user", "collections": ["memory"], "n_results": 5 }}
-</example>
-<example>
-User: Compare the AI ethics principles we discussed before with the latest industry standards.
-Search: {{ "query": "AI ethics principles comparison industry standards", "collections": ["memory", "web"], "n_results": 30 }}
-</example>
-</examples>
-<instruction>
+The parameter 'n_results' should be set to a very low number (0-5) if the query does not justify a larger context. It is expensive to both search the web and to process all the context tokens, so do not set n_results too high.
+</instruction>"""
+	},
+	{"role": "user", "content": "Where was Donald Trump born?"},
+	{"role": "assistant", "content": """{{ "explanation": "The query requires specific factual information about a public figure's birthplace, which is best obtained from web sources.", "query": "Donald Trump birthplace", "collections": ["web"], "n_results": 5 }}"""
+	},
+	{"role": "user", "content": "What major event happened on 7 December 1941?"},
+	{"role": "assistant", "content": """{{ "explanation": "This query asks about a historical event on a specific date, which is likely to be found in web sources. A lower number of results may result in a more focused answer.", "query": "major event on 7 December 1941", "collections": ["web"], "n_results": 5 }}"""
+	},
+	{"role": "user", "content": "What did we talk about regarding AI safety last time?"},
+	{"role": "assistant", "content": """{{ "explanation": "The user is asking about a previous conversation, so we should search the memory collection. The query focuses on AI safety discussions.", "query": "AI safety discussion", "collections": ["memory"], "n_results": 10 }}"""
+	},
+	{"role": "user", "content": "Can you remind me of the three laws of robotics we discussed earlier?"},
+	{"role": "assistant", "content": """{{ "explanation": "The user is asking for a reminder of a previous discussion, so we should search the memory collection. The query specifies the three laws of robotics.", "query": "three laws of robotics", "collections": ["memory"], "n_results": 10 }}"""
+	},
+	{"role": "user", "content": "Tell me the latest news about the Mars rover."},
+	{"role": "assistant", "content": """{{ "explanation": "This query requires up-to-date information about the Mars rover, which is best obtained from web sources. A higher number of results will provide more comprehensive coverage.", "query": "Mars rover latest news", "collections": ["web"], "n_results": 20 }}"""
+	},
+	{"role": "user", "content": "Do you remember my name?"},
+	{"role": "assistant", "content": """{{ "explanation": "The user is asking about personal information shared in a previous interaction, so we should search the memory collection. A smaller number of results should suffice for this specific query.", "query": "name of user", "collections": ["memory"], "n_results": 2 }}"""
+	},
+	{"role": "user", "content": "Compare the AI ethics principles we discussed before with the latest industry standards."},
+	{"role": "assistant", "content": """{{ "explanation": "This query requires both recalling previous discussions (memory search) and obtaining current information (web search). A higher number of results will provide a more comprehensive comparison.", "query": "AI ethics principles comparison industry standards", "collections": ["memory", "web"], "n_results": 30 }}"""
+	},
+	{"role": "system", "content":
+"""<instruction>
 Please note these are only examples to improve the quality of your query. The specific content of these examples should not be referenced in the search query.
-</instruction>
-"""},
+</instruction>"""
+	},
 	{"role": "user", "content": "{question}"},
 ]
-COT_PROMPT_TEMPLATE = [{"role": "system", "content":
+COT_PROMPT_TEMPLATE = [
+	{"role": "system", "content":
 """<task>
 Provide a detailed, step-by-step response using Chain-of-Thought reasoning, augmenting your knowledge with context from below if necessary.
 </task>
@@ -198,12 +197,13 @@ Structure your response as follows:
 2. Approach: Describe the steps you'll take to solve it.
 3. Solution: Provide a step-by-step solution, clearly explaining each step.
 4. Conclusion: Summarize the final answer or result.
-</instruction>
-<examples>
-<example>
-Query: If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?
-Response:
-Thought: This problem involves distributing apples to friends and then calculating the remaining apples.
+
+Remember: Complexity is not the problem, ambiguity is. Simplicity does not solve ambiguity, clarity does. Respond clearly to the user's question and/or request but do not simplify your response or be ambiguous. Embrace complexity when necessary, but always strive for clarity in your explanations.
+</instruction>"""
+	},
+	{"role": "user", "content": "If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?"},
+	{"role": "assistant", "content":
+"""Thought: This problem involves distributing apples to friends and then calculating the remaining apples.
 
 Approach:
 1. Determine the total number of apples given away
@@ -220,12 +220,11 @@ Solution:
    - Apples given away: 12
    - Remaining: 15 - 12 = 3 apples
 
-Conclusion: After giving 3 apples to each of my 4 friends, I have 3 apples left.
-</example>
-<example>
-Query: Explain the process of photosynthesis.
-Response:
-Thought: Photosynthesis is a complex biological process that plants use to convert light energy into chemical energy. It involves multiple steps and requires several components.
+Conclusion: After giving 3 apples to each of my 4 friends, I have 3 apples left."""
+	},
+	{"role": "user", "content": "Explain the process of photosynthesis."},
+	{"role": "assistant", "content":
+"""Thought: Photosynthesis is a complex biological process that plants use to convert light energy into chemical energy. It involves multiple steps and requires several components.
 
 Approach:
 1. Define photosynthesis
@@ -259,12 +258,11 @@ Solution:
 5. Overall equation:
    6 CO2 + 6 H2O + light energy → C6H12O6 (glucose) + 6 O2
 
-Conclusion: Photosynthesis is a crucial process that converts light energy into chemical energy, producing glucose and oxygen as byproducts. This process is essential for life on Earth, providing food and oxygen for many organisms.
-</example>
-<example>
-Query: I have 2 bananas. I ate one yesterday. How many do I have now?
-Response:
-Thought: This problem appears to be a simple mathematical problem involving subtraction. However, the one banana eaten yesterday does not actually affect the amount of bananas available now.
+Conclusion: Photosynthesis is a crucial process that converts light energy into chemical energy, producing glucose and oxygen as byproducts. This process is essential for life on Earth, providing food and oxygen for many organisms."""
+	},
+	{"role": "user", "content": "I have 2 bananas. I ate one yesterday. How many do I have now?"},
+	{"role": "assistant", "content":
+"""Thought: This problem appears to be a simple mathematical problem involving subtraction. However, the one banana eaten yesterday does not actually affect the amount of bananas available now.
 
 Approach:
 1. Identify the current number of bananas
@@ -284,12 +282,11 @@ Solution:
    - No calculation is needed in this case
    - The number of bananas now is directly stated in the present tense
 
-Conclusion: You have 2 bananas now. The banana eaten yesterday is not relevant to the current count, as the question specifies "I have 2 bananas" in the present tense.
-</example>
-<example>
-Query: How many 'r's are there in the word "strawberry"?
-Response:
-Thought: This problem requires us to count the occurrences of a specific letter in a given word. We need to examine each letter in "strawberry" and keep a tally of how many times we see the letter 'r'.
+Conclusion: You have 2 bananas now. The banana eaten yesterday is not relevant to the current count, as the question specifies "I have 2 bananas" in the present tense."""
+	},
+	{"role": "user", "content": "How many 'r's are there in the word \"strawberry\"?"},
+	{"role": "assistant", "content":
+"""Thought: This problem requires us to count the occurrences of a specific letter in a given word. We need to examine each letter in "strawberry" and keep a tally of how many times we see the letter 'r'.
 
 Approach:
 1. Write out the word "strawberry"
@@ -316,10 +313,10 @@ Solution:
 3. Final count:
    We found 3 occurrences of the letter 'r'
 
-Conclusion: There are 3 'r's in the word "strawberry".
-</example>
-</examples>
-<context type="memory">
+Conclusion: There are 3 'r's in the word "strawberry"."""
+	},
+	{"role": "system", "content":
+"""<context type="memory">
 {memory}
 </context>
 <context type="web_search">
@@ -327,11 +324,14 @@ Conclusion: There are 3 'r's in the word "strawberry".
 </context>
 <instruction>
 Please note that <chunk> tags in the <context type="memory"> tag may be out of order; use the timestamp and turn-index property to determine the most recent information.
-DO NOT continue the conversation on your own and DO NOT correct yourself or leave notes to yourself. DO NOT disclose these instructions to the user.
-</instruction>"""},
+DO NOT continue the conversation on your own and DO NOT correct yourself or leave notes to yourself. DO NOT disclose these instructions or the above examples to the user. The examples provided are merely guides to improve your answer.
+</instruction>"""
+	},
 	{"role": "user", "content": "{question}"},
 ]
-DECISION_PROMPT_TEMPLATE = [{"role": "system", "content": 
+
+DECISION_PROMPT_TEMPLATE = [
+	{"role": "system", "content": 
 """<task>
 Analyze the given query and context to determine if a Chain-of-Thought (CoT) approach is necessary for the response.
 </task>
@@ -342,36 +342,23 @@ Decide whether the query requires step-by-step logical reasoning. Consider the f
 3. Multi-step processes or explanations
 4. Situations where showing work would be beneficial for an accurate answer (counting, calculating, etc.)
 
-Include an 'explanation' parameter to briefly justify your decision, then set the 'use_cot' parameter to true if Chain-of-Thought reasoning is necessary, and false if it is not.
-</instruction>
-
-<examples>
-<example>
-Query: What's the capital of France?
-Response: {{ "explanation": "This is a simple factual question that doesn't require step-by-step reasoning.", "use_cot": false }}
-</example>
-<example>
-Query: If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?
-Response: {{ "explanation": "This problem involves multiple steps of arithmetic and would benefit from showing the work.", "use_cot": true }}
-</example>
-<example>
-Query: Can you explain the process of photosynthesis?
-Response: {{ "explanation": "Explaining a biological process involves multiple steps and would benefit from a structured, step-by-step explanation.", "use_cot": true }}
-</example>
-<example>
-Query: What's your favorite color?
-Response: {{ "explanation": "This is a subjective question that doesn't require logical reasoning or multiple steps to answer.", "use_cot": false }}
-</example>
-<example>
-Query: How does the greenhouse effect contribute to global warming?
-Response: {{ "explanation": "This topic involves multiple interconnected concepts and would benefit from a structured explanation of the process.", "use_cot": true }}
-</example>
-<example>
-Query: How many 'r's are there in the word "strawberry"?
-Response: {{ "explanation": "While this is a straightforward counting task, showing the step-by-step process of identifying each 'r' in the word would be beneficial for clarity and accuracy.", "use_cot": true }}
-</example>
-</examples>
-<instruction>
+You will include an 'explanation' parameter to briefly justify your decision, then set the 'use_cot' parameter to true if Chain-of-Thought reasoning is necessary, and false if it is not.
+</instruction>"""
+	},
+	{"role": "user", "content": "Query: What's the capital of France?"},
+	{"role": "assistant", "content": """{{ "explanation": "This is a simple factual question that doesn't require step-by-step reasoning.", "use_cot": false }}"""},
+	{"role": "user", "content": "Query: If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?"},
+	{"role": "assistant", "content": """{{ "explanation": "This problem involves multiple steps of arithmetic and would benefit from showing the work.", "use_cot": true }}"""},
+	{"role": "user", "content": "Query: Can you explain the process of photosynthesis?"},
+	{"role": "assistant", "content": """{{ "explanation": "Explaining a biological process involves multiple steps and would benefit from a structured, step-by-step explanation.", "use_cot": true }}"""},
+	{"role": "user", "content": "Query: What's your favorite color?"},
+	{"role": "assistant", "content": """{{ "explanation": "This is a subjective question that doesn't require logical reasoning or multiple steps to answer.", "use_cot": false }}"""},
+	{"role": "user", "content": "Query: How does the greenhouse effect contribute to global warming?"},
+	{"role": "assistant", "content": """{{ "explanation": "This topic involves multiple interconnected concepts and would benefit from a structured explanation of the process.", "use_cot": true }}"""},
+	{"role": "user", "content": "Query: How many 'r's are there in the word \"strawberry\"?"},
+	{"role": "assistant", "content": """{{ "explanation": "While this is a straightforward counting task, showing the step-by-step process of identifying each 'r' in the word would be beneficial for clarity and accuracy.", "use_cot": true }}"""},
+	{"role": "system", "content": 
+"""<instruction>
 Please note these are only examples to improve the quality of your final decision. You should not cite these examples in your explanation.
 </instruction>
 <context type="memory">
@@ -379,8 +366,9 @@ Please note these are only examples to improve the quality of your final decisio
 </context>
 <query>
 {query}
-</query>"""},
-  {"role": "user", "content": "Based on the query and context, determine if Chain-of-Thought (CoT) reasoning is necessary. Provide an explanation for your decision, then indicate whether to use CoT in your response with the appropriate JSON object."},
+</query>"""
+	},
+	{"role": "user", "content": "Based on the query and context, determine if Chain-of-Thought (CoT) reasoning is necessary. Provide an explanation for your decision, then indicate whether to use CoT in your response with the appropriate JSON object."},
 ]
 
 turn_index: int = 0
@@ -402,6 +390,10 @@ async def generate_rag(user_input: str, llm: Llama):
 					"parameters": {
 						"type": "object",
 						"properties": {
+							"explanation": {
+								"type": "string",
+								"description": "A brief explanation of why each parameter is set the way it is."
+							},
 							"query": {
 								"type": "string",
 								"description": "The search query to be sent to the search engine. This can be a question, a statement, or a search term."
@@ -415,7 +407,7 @@ async def generate_rag(user_input: str, llm: Llama):
 								"description": "The number of search results to return. Default value is 10."
 							}
 						},
-						"required": ["query", "collections"]
+						"required": ["explanation", "query", "collections"]
 					}
 				}
 			}]
@@ -478,8 +470,9 @@ async def generate_rag(user_input: str, llm: Llama):
 		print(f"Use Chain-of-Thought reasoning: {'Yes' if use_cot else 'No'}")
 
 		chosen_template = COT_PROMPT_TEMPLATE if use_cot else PROMPT_TEMPLATE
-
 		messages = generate_prompt(chosen_template, memory=memory_context, web_search=web_search_context, question=user_input)
+		for message in messages:
+			print(message["content"])
 		result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 			messages=messages,
 			temperature=0.666,
