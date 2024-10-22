@@ -192,35 +192,12 @@ COT_PROMPT_TEMPLATE = [
 Provide a detailed, step-by-step response using Chain-of-Thought reasoning, augmenting your knowledge with context from below if necessary.
 </task>
 <instruction>
-Structure your response as follows:
+You MUST structure your response as follows:
 1. Thought: Explain your initial thoughts about the problem.
 2. Approach: Describe the steps you'll take to solve it.
 3. Solution: Provide a step-by-step solution, clearly explaining each step.
 4. Conclusion: Summarize the final answer or result.
-
-Remember: Complexity is not the problem, ambiguity is. Simplicity does not solve ambiguity, clarity does. Respond clearly to the user's question and/or request but do not simplify your response or be ambiguous. Embrace complexity when necessary, but always strive for clarity in your explanations.
 </instruction>"""
-	},
-	{"role": "user", "content": "If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?"},
-	{"role": "assistant", "content":
-"""Thought: This problem involves distributing apples to friends and then calculating the remaining apples.
-
-Approach:
-1. Determine the total number of apples given away
-2. Subtract the given apples from the initial amount
-
-Solution:
-1. Calculate apples given away:
-   - Number of friends: 4
-   - Apples per friend: 3
-   - Total given: 4 × 3 = 12 apples
-
-2. Calculate remaining apples:
-   - Initial apples: 15
-   - Apples given away: 12
-   - Remaining: 15 - 12 = 3 apples
-
-Conclusion: After giving 3 apples to each of my 4 friends, I have 3 apples left."""
 	},
 	{"role": "user", "content": "Explain the process of photosynthesis."},
 	{"role": "assistant", "content":
@@ -260,60 +237,26 @@ Solution:
 
 Conclusion: Photosynthesis is a crucial process that converts light energy into chemical energy, producing glucose and oxygen as byproducts. This process is essential for life on Earth, providing food and oxygen for many organisms."""
 	},
-	{"role": "user", "content": "I have 2 bananas. I ate one yesterday. How many do I have now?"},
+	{"role": "user", "content": "If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?"},
 	{"role": "assistant", "content":
-"""Thought: This problem appears to be a simple mathematical problem involving subtraction. However, the one banana eaten yesterday does not actually affect the amount of bananas available now.
+"""Thought: This problem involves distributing apples to friends and then calculating the remaining apples.
 
 Approach:
-1. Identify the current number of bananas
-2. Consider the relevance of past actions
-3. Determine if any calculation is necessary
+1. Determine the total number of apples given away
+2. Subtract the given apples from the initial amount
 
 Solution:
-1. Current number of bananas:
-   - The statement "I have 2 bananas" indicates the current possession
-   - This is the key information for answering the question
+1. Calculate apples given away:
+   - Number of friends: 4
+   - Apples per friend: 3
+   - Total given: 4 × 3 = 12 apples
 
-2. Relevance of past actions:
-   - "I ate one yesterday" refers to a past event
-   - Past consumption doesn't affect the current count unless explicitly stated
+2. Calculate remaining apples:
+   - Initial apples: 15
+   - Apples given away: 12
+   - Remaining: 15 - 12 = 3 apples
 
-3. Calculation:
-   - No calculation is needed in this case
-   - The number of bananas now is directly stated in the present tense
-
-Conclusion: You have 2 bananas now. The banana eaten yesterday is not relevant to the current count, as the question specifies "I have 2 bananas" in the present tense."""
-	},
-	{"role": "user", "content": "How many 'r's are there in the word \"strawberry\"?"},
-	{"role": "assistant", "content":
-"""Thought: This problem requires us to count the occurrences of a specific letter in a given word. We need to examine each letter in "strawberry" and keep a tally of how many times we see the letter 'r'.
-
-Approach:
-1. Write out the word "strawberry"
-2. Go through each letter one by one
-3. Keep a count of 'r's encountered
-4. Sum up the total count
-
-Solution:
-1. Write out the word:
-   s t r a w b e r r y
-
-2. Examine each letter:
-   s - not an 'r'
-   t - not an 'r'
-   r - first 'r' found, count is 1
-   a - not an 'r'
-   w - not an 'r'
-   b - not an 'r'
-   e - not an 'r'
-   r - second 'r' found, count is 2
-   r - third 'r' found, count is 3
-   y - not an 'r'
-
-3. Final count:
-   We found 3 occurrences of the letter 'r'
-
-Conclusion: There are 3 'r's in the word "strawberry"."""
+Conclusion: After giving 3 apples to each of my 4 friends, I have 3 apples left."""
 	},
 	{"role": "system", "content":
 """<context type="memory">
@@ -329,7 +272,6 @@ DO NOT continue the conversation on your own and DO NOT correct yourself or leav
 	},
 	{"role": "user", "content": "{question}"},
 ]
-
 DECISION_PROMPT_TEMPLATE = [
 	{"role": "system", "content": 
 """<task>
@@ -349,12 +291,8 @@ You will include an 'explanation' parameter to briefly justify your decision, th
 	{"role": "assistant", "content": """{{ "explanation": "This is a simple factual question that doesn't require step-by-step reasoning.", "use_cot": false }}"""},
 	{"role": "user", "content": "Query: If I have 15 apples and give 3 to each of my 4 friends, how many do I have left?"},
 	{"role": "assistant", "content": """{{ "explanation": "This problem involves multiple steps of arithmetic and would benefit from showing the work.", "use_cot": true }}"""},
-	{"role": "user", "content": "Query: Can you explain the process of photosynthesis?"},
-	{"role": "assistant", "content": """{{ "explanation": "Explaining a biological process involves multiple steps and would benefit from a structured, step-by-step explanation.", "use_cot": true }}"""},
 	{"role": "user", "content": "Query: What's your favorite color?"},
 	{"role": "assistant", "content": """{{ "explanation": "This is a subjective question that doesn't require logical reasoning or multiple steps to answer.", "use_cot": false }}"""},
-	{"role": "user", "content": "Query: How does the greenhouse effect contribute to global warming?"},
-	{"role": "assistant", "content": """{{ "explanation": "This topic involves multiple interconnected concepts and would benefit from a structured explanation of the process.", "use_cot": true }}"""},
 	{"role": "user", "content": "Query: How many 'r's are there in the word \"strawberry\"?"},
 	{"role": "assistant", "content": """{{ "explanation": "While this is a straightforward counting task, showing the step-by-step process of identifying each 'r' in the word would be beneficial for clarity and accuracy.", "use_cot": true }}"""},
 	{"role": "system", "content": 
@@ -370,7 +308,56 @@ Please note these are only examples to improve the quality of your final decisio
 	},
 	{"role": "user", "content": "Based on the query and context, determine if Chain-of-Thought (CoT) reasoning is necessary. Provide an explanation for your decision, then indicate whether to use CoT in your response with the appropriate JSON object."},
 ]
-
+search_tool = {
+	"type": "function",
+	"function": {
+		"name": "search",
+		"description": "Search the local vector store for relevant documents or search the web using Google for relevant results.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"explanation": {
+					"type": "string",
+					"description": "A brief explanation of why each parameter is set the way it is."
+				},
+				"query": {
+					"type": "string",
+					"description": "The search query to be sent to the search engine. This can be a question, a statement, or a search term."
+				},
+				"collections": {
+					"type": "array",
+					"description": "The names of the ChromaDB collections to search in a string array. Available collections are 'memory' and 'web', or none at all (empty array). Please use 'web' for queries that require up-to-date, precise or obscure information.",
+				},
+				"n_results": {
+					"type": "number",
+					"description": "The number of search results to return. Default value is 10."
+				}
+			},
+			"required": ["explanation", "query", "collections"]
+		}
+	}
+}
+decision_tool = {
+	"type": "function",
+	"function": {
+		"name": "cot_decision",
+		"description": "Determine if Chain-of-Thought reasoning is necessary for the response.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"explanation": {
+					"type": "string",
+					"description": "A brief explanation justifying the decision to use or not use Chain-of-Thought reasoning."
+				},
+				"use_cot": {
+					"type": "boolean",
+					"description": "Set to true if Chain-of-Thought reasoning is necessary for the response, and false otherwise."
+				}
+			}
+		},
+		"required": ["explanation", "use_cot"]
+	}
+}
 turn_index: int = 0
 async def generate_rag(user_input: str, llm: Llama):
 	global turn_index
@@ -382,35 +369,7 @@ async def generate_rag(user_input: str, llm: Llama):
 			messages=messages,
 			temperature=0.25,
 			tool_choice={ "type": "function", "function": { "name": "search" } },
-			tools=[{
-				"type": "function",
-				"function": {
-					"name": "search",
-					"description": "Search the local vector store for relevant documents or search the web using Google for relevant results.",
-					"parameters": {
-						"type": "object",
-						"properties": {
-							"explanation": {
-								"type": "string",
-								"description": "A brief explanation of why each parameter is set the way it is."
-							},
-							"query": {
-								"type": "string",
-								"description": "The search query to be sent to the search engine. This can be a question, a statement, or a search term."
-							},
-							"collections": {
-								"type": "array",
-								"description": "The names of the ChromaDB collections to search in a string array. Available collections are 'memory' and 'web', or none at all (empty array). Please use 'web' for queries that require up-to-date, precise or obscure information.",
-							},
-							"n_results": {
-								"type": "number",
-								"description": "The number of search results to return. Default value is 10."
-							}
-						},
-						"required": ["explanation", "query", "collections"]
-					}
-				}
-			}]
+			tools=[search_tool]
 		)
 		tool_call_params = tool_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
 		tool_call_args: dict = json.loads(tool_call_params)
@@ -438,27 +397,7 @@ async def generate_rag(user_input: str, llm: Llama):
 			messages=decision_messages,
 			temperature=0.25,
 			tool_choice={ "type": "function", "function": { "name": "cot_decision" } },
-			tools=[{
-				"type": "function",
-				"function": {
-					"name": "cot_decision",
-					"description": "Determine if Chain-of-Thought reasoning is necessary for the response.",
-					"parameters": {
-						"type": "object",
-						"properties": {
-							"explanation": {
-								"type": "string",
-								"description": "A brief explanation justifying the decision to use or not use Chain-of-Thought reasoning."
-							},
-							"use_cot": {
-								"type": "boolean",
-								"description": "Set to true if Chain-of-Thought reasoning is necessary for the response, and false otherwise."
-							}
-						}
-					},
-					"required": ["explanation", "use_cot"]
-				}
-			}]
+			tools=[decision_tool]
 		)
 
 		decision_params = decision_call["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
@@ -467,7 +406,6 @@ async def generate_rag(user_input: str, llm: Llama):
 		use_cot: bool = decision_args.get("use_cot", False)
 
 		print(f"CoT Decision Explanation: {cot_explanation}")
-		print(f"Use Chain-of-Thought reasoning: {'Yes' if use_cot else 'No'}")
 
 		chosen_template = COT_PROMPT_TEMPLATE if use_cot else PROMPT_TEMPLATE
 		messages = generate_prompt(chosen_template, memory=memory_context, web_search=web_search_context, question=user_input)
@@ -475,17 +413,23 @@ async def generate_rag(user_input: str, llm: Llama):
 			print(message["content"])
 		result: Iterator[CreateChatCompletionStreamResponse] = llm.create_chat_completion(
 			messages=messages,
-			temperature=0.666,
+			temperature=0.67,
 			top_p=0.9,
 			top_k=27,
 			min_p=0.025,
 			stream=True,
 		)
 		response = ""
-		for chunk in result:
-			yield chunk['choices'][0]['delta'].get('content', '')
-			await asyncio.sleep(0)
-			response += chunk['choices'][0]['delta'].get('content', '')
+		async def process_chunks():
+			nonlocal response
+			for chunk in result:
+				content = chunk['choices'][0]['delta'].get('content', '')
+				yield content
+				response += content
+
+		async for content in process_chunks():
+			yield content
+
 		if web_search_context:
 			yield "\n\nSearched:\n" + "\n".join([f"- {web_search_result['url']}" for web_search_result in web_search_results])
 		add_to_chroma(memory_collection, user_input, {"source": "user", "timestamp": get_formatted_time(), "turn_index": turn_index})
